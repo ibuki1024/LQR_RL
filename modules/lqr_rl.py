@@ -1,28 +1,34 @@
 import numpy as np
 from scipy import linalg
 
-class LqrAgent():
-    def __init__(self,A,B,E,F,initial_gain):
+class RlAgent():
+    def __init__(self,A,B,E,F,initial_gain=None,theta=None):
         self.A = A
         self.B = B
         self.E = E
         self.F = F
         self.initial_gain = initial_gain
+        self.theta = theta
 
-    def fit(self, iter_RLS=400, iter_Gain=1000, sn=100):
+    def fit(self, iter_RLS=1000, iter_Gain=50, s_n=10):
         A = self.A
         B = self.B
         E = self.E
         F = self.F
-        U = self.initial_gain
+        theta = self.theta
         U_opt = - lqr(A,B,E,F)[1]
         gamma = 1.
 
+        if self.initial_gain is None:
+            self.initial_gain, theta = initialGain(A,B,E,F)
+            self.theta = theta
+
+        U = self.initial_gain
         n,p = B.shape
         n_th = int((n+p)*(n+p+1)/2)
 
         x_hist = []
-        U_hist = []
+        U_hist = [U]
         Uerr_hist = []
 
 
@@ -51,29 +57,35 @@ class LqrAgent():
             if max(np.abs(np.linalg.eig(A+np.dot(B,U))[0]))>1:
                 print(k)
                 break
+            U_hist.append(U)
 
         self.final_gain = U
         self.Uerr_hist = Uerr_hist
+        self.U_hist = U_hist
 
 class DpAgent():
-    def __init__(self,A,B,E,F,initial_gain):
+    def __init__(self,A,B,E,F,initial_gain=None):
         self.A = A
         self.B = B
         self.E = E
         self.F = F
         self.initial_gain = initial_gain
 
-    def fit(self, iter_Gain=1000):
+    def fit(self, iter_Gain=50):
         A = self.A
         B = self.B
         E = self.E
         F = self.F
-        U = self.initial_gain
         U_opt = - lqr(A,B,E,F)[1]
 
+        if self.initial_gain is None:
+            self.initial_gain, theta = initialGain(A,B,E,F)
+
+        U = self.initial_gain
         n,p = B.shape
 
         Uerr_hist = []
+        U_hist = [U]
         for i in range(iter_Gain):
             Uerr_hist.append(np.linalg.norm(U-U_opt, ord='fro'))
             sys_n = np.eye(n) #preserve (A+BU)^i
@@ -91,8 +103,10 @@ class DpAgent():
             H = np.vstack((H_upper, H_under))
 
             U = - np.dot(np.linalg.inv(H[n:n+p,n:n+p]), H[n:n+p,0:n])
+            U_hist.append(U)
         self.final_gain = U
         self.Uerr_hist = Uerr_hist
+        self.U_hist = U_hist
 
 
 
@@ -105,7 +119,7 @@ def initialGain(A,B,E,F):
         U = - np.dot(np.linalg.inv(H[n:n+p,n:n+p]), H[n:n+p,0:n])
         if max(np.abs(np.linalg.eig(A+np.dot(B,U))[0]))<0.99:
             break
-    return U
+    return U, theta
 
 def H_to_theta(H):
     '''transform H to theta
