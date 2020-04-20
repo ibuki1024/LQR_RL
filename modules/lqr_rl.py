@@ -10,7 +10,7 @@ class RlAgent():
         self.initial_gain = initial_gain
         self.theta = theta
 
-    def fit(self, iter_RLS=1000, iter_Gain=50, s_n=10):
+    def fit(self, iter_RLS=1000, iter_Gain=50, s_n=10, p_n=0.1, gamma=1, random=False):
         A = self.A
         B = self.B
         E = self.E
@@ -33,25 +33,30 @@ class RlAgent():
 
 
         x = np.random.rand(n,)/10;
-        P = np.eye(n_th)
-
+        pehist = []
         for k in range(1,iter_Gain+1):
             Uerr_hist.append(np.linalg.norm(U-U_opt, ord='fro'))
+            pe = []
+            P = 1e7*np.eye(n_th)
             for i in range(1,iter_RLS+1):
                 u = np.dot(U,x) + np.random.randn(p,)*s_n
                 c = quad(x,E) + quad(u,F)
-                bar = H_to_theta(np.outer(np.hstack((x,u)),np.hstack((x,u))))
+                bar = H_to_theta(np.outer(np.hstack((x,u)),np.hstack((x,u)))) #Q(x_t,Ux_t+e_t)
                 x = np.dot(A,x) + np.dot(B,u)
+                if random:
+                    x += np.random.randn()*p_n
                 u = np.dot(U,x)
-                barplus = H_to_theta(np.outer(np.hstack((x,u)),np.hstack((x,u))))
+                barplus = H_to_theta(np.outer(np.hstack((x,u)),np.hstack((x,u)))) #Q(x_{t+1},Ux_{t+1})
 
                 phi = bar - np.dot(gamma, barplus)
+                pe.append(np.linalg.det(np.outer(phi,phi)))
 
                 e = c - np.dot(phi,theta)
                 denom = 1 + quad(phi,P)
                 theta += np.dot(np.dot(P,phi),e)/denom
                 P -= np.outer(np.dot(P,phi),np.dot(phi,P))/denom
 
+            pehist.append(np.array(pe)/(iter_RLS+1))
             H = theta_to_H(theta,n+p)
             U = - np.dot(np.linalg.inv(H[n:n+p,n:n+p]), H[n:n+p,0:n])
             if max(np.abs(np.linalg.eig(A+np.dot(B,U))[0]))>1:
@@ -59,6 +64,7 @@ class RlAgent():
                 break
             U_hist.append(U)
 
+        self.pehist = pehist
         self.final_gain = U
         self.Uerr_hist = Uerr_hist
         self.U_hist = U_hist
